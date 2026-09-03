@@ -1,16 +1,17 @@
+
 import base64
 import os
 
 import pandas as pd
 import streamlit as st
 
-from PDF_core import process_pdf_bytes
+from pdf_core import process_pdf_bytes
 
 st.set_page_config(page_title="PDF Corrector", page_icon="📄", layout="wide")
 
 
 def show_pdf(pdf_bytes, height=650):
-    """Embeds a PDF (from bytes) inline using a base64 iframe."""
+
     b64 = base64.b64encode(pdf_bytes).decode("utf-8")
     pdf_display = f"""
         <iframe
@@ -19,34 +20,37 @@ def show_pdf(pdf_bytes, height=650):
             height="{height}"
             type="application/pdf"
             style="border: 1px solid #444; border-radius: 6px;"
-        ></iframe>
-    """
+        ></iframe>"""
+        
     st.markdown(pdf_display, unsafe_allow_html=True)
 
 
-# ---------------------------------------------------------------------------
-# Sidebar — API key handling
-# ---------------------------------------------------------------------------
 
 st.sidebar.title("Settings")
 
-env_key = os.environ.get("OPENAI_API_KEY", "")
-api_key_input = st.sidebar.text_input(
-    "OpenAI API Key",
-    value=env_key,
+try:
+    default_key = st.secrets.get("OPENAI_API_KEY", "")
+except Exception:
+    default_key = ""
+if not default_key:
+    default_key = os.environ.get("OPENAI_API_KEY", "")
+
+visitor_key = st.sidebar.text_input(
+    "Use your own OpenAI API key (optional)",
+    value="",
     type="password",
-    help="Reads from OPENAI_API_KEY env var if set. You can override it here for this session only.",
-)
-if api_key_input:
-    os.environ["OPENAI_API_KEY"] = api_key_input
-
-st.sidebar.caption(
-    "Your key is only kept in this session's memory — it is not saved to disk."
+    help="Leave blank to use the app's default key. Enter your own to use your own quota instead.",
 )
 
-# ---------------------------------------------------------------------------
-# Main layout
-# ---------------------------------------------------------------------------
+effective_api_key = visitor_key.strip() if visitor_key.strip() else default_key
+
+if default_key and not visitor_key:
+    st.sidebar.caption("Using the app's built-in API key.")
+elif visitor_key:
+    st.sidebar.caption("Using the key you entered (this session only).")
+else:
+    st.sidebar.caption("No API key available yet — enter one above to use the app.")
+
 
 st.title("📄 PDF Spelling & Grammar Corrector")
 st.write(
@@ -74,8 +78,8 @@ if uploaded_file is not None:
     generate_clicked = st.button("✨ Generate", type="primary", use_container_width=False)
 
     if generate_clicked:
-        if not os.environ.get("OPENAI_API_KEY"):
-            st.error("Please enter your OpenAI API key in the sidebar first.")
+        if not effective_api_key:
+            st.error("No API key available. Please enter one in the sidebar first.")
         else:
             status_box = st.empty()
             log_lines = []
@@ -87,7 +91,7 @@ if uploaded_file is not None:
             with st.spinner("Processing PDF..."):
                 try:
                     output_bytes, corrections, summary = process_pdf_bytes(
-                        input_bytes, progress_callback=report
+                        input_bytes, progress_callback=report, api_key=effective_api_key
                     )
                     st.session_state.output_bytes = output_bytes
                     st.session_state.corrections = corrections
@@ -96,9 +100,6 @@ if uploaded_file is not None:
                 except Exception as e:
                     status_box.error(f"Something went wrong: {e}")
 
-    # -----------------------------------------------------------------------
-    # Results: corrections table, summary, output PDF
-    # -----------------------------------------------------------------------
 
     if st.session_state.output_bytes is not None:
         st.divider()
