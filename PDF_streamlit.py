@@ -5,7 +5,7 @@ import os
 import pandas as pd
 import streamlit as st
 
-from pdf_core import process_pdf_bytes
+from PDF_core import process_pdf_bytes
 
 st.set_page_config(page_title="PDF Corrector", page_icon="📄", layout="wide")
 
