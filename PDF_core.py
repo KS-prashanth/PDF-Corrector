@@ -6,8 +6,9 @@ from openai import OpenAI
 MODEL = "gpt-4o-mini"  
 
 
-def get_client():
-
+def get_client(api_key=None):
+    if api_key:
+        return OpenAI(api_key=api_key)
     return OpenAI()
 
 
