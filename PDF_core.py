@@ -1,4 +1,3 @@
-
 import json
 import fitz  # PyMuPDF
 from openai import OpenAI
@@ -7,13 +6,16 @@ MODEL = "gpt-4o-mini"
 
 
 def get_client(api_key=None):
+    """Creates an OpenAI client. If api_key is not provided, falls back to
+    the OPENAI_API_KEY env var (OpenAI SDK's default behavior)."""
     if api_key:
         return OpenAI(api_key=api_key)
     return OpenAI()
 
 
+
 def extract_pages(doc):
-  
+    """Returns a list (per page) of span dicts: text, bbox, font, size."""
     pages_data = []
     for page in doc:
         spans = []
@@ -38,7 +40,12 @@ def extract_pages(doc):
     return pages_data
 
 
+
+
 def correct_page_spans(client, spans, max_retries=2, on_warning=None):
+    """Sends {id, text} pairs to the model, gets back corrected text per id.
+    on_warning: optional callback(str) for surfacing warnings to a caller (e.g. Streamlit).
+    """
     if not spans:
         return spans
 
@@ -87,9 +94,10 @@ Input fragments:
             continue
 
 
-
 def register_page_fonts(doc, page):
-
+    """Try to extract and register embedded fonts for this page.
+    Returns a dict mapping original font name -> usable fontname for insert_text.
+    """
     font_map = {}
     for font in page.get_fonts(full=True):
         xref, ext, ftype, basefont, fontname, encoding = font[:6]
@@ -126,7 +134,10 @@ def _int_to_rgb(color_int):
 
 
 def rewrite_pdf(doc, pages_data, output_path):
-
+    """Redacts (truly removes, not just covers) changed spans and inserts
+    corrected text in their place, preserving font/size/position as closely
+    as possible. Saves to output_path.
+    """
     for page, spans in zip(doc, pages_data):
         font_map = register_page_fonts(doc, page)
         to_redact = [
@@ -205,7 +216,10 @@ def append_summary_page(doc, summary_text):
 
 
 def get_corrections_list(pages_data):
-
+    """Returns a flat list of dicts for every span whose text actually
+    changed: {page, original, corrected}. Useful for displaying a
+    before/after table in a UI.
+    """
     corrections = []
     for page_num, spans in enumerate(pages_data, 1):
         for s in spans:
@@ -220,14 +234,17 @@ def get_corrections_list(pages_data):
     return corrections
 
 
-
-def process_pdf_bytes(input_bytes, progress_callback=None):
-
+def process_pdf_bytes(input_bytes, progress_callback=None, api_key=None):
+    """Runs the full pipeline on PDF bytes in memory.
+    progress_callback: optional callable(str) for status updates (e.g. st.status).
+    api_key: optional explicit OpenAI API key; falls back to OPENAI_API_KEY env var if omitted.
+    Returns: (output_pdf_bytes, corrections_list, summary_text)
+    """
     def report(msg):
         if progress_callback:
             progress_callback(msg)
 
-    client = get_client()
+    client = get_client(api_key)
     doc = fitz.open(stream=input_bytes, filetype="pdf")
 
     report("Extracting text...")
@@ -241,7 +258,7 @@ def process_pdf_bytes(input_bytes, progress_callback=None):
     corrections = get_corrections_list(pages_data)
 
     report("Rewriting PDF with corrections...")
-
+    # rewrite_pdf saves to a path; use a temp in-memory-friendly approach via tobytes
     for page, spans in zip(doc, pages_data):
         font_map = register_page_fonts(doc, page)
         to_redact = [s for s in spans if s["text"].strip() != s["corrected"].strip()]
